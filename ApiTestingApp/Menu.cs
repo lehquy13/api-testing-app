@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
+using System.IO;
 
 namespace ApiTestingApp;
 
@@ -11,7 +12,7 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
 {
     public async Task RunAsync()
     {
-        Console.Title = "HTTP Load Console (Key in Body, DI + HostBuilder)";
+        Console.Title = "HTTP Load Console (Key in Authorization Header, DI + HostBuilder)";
         while (true)
         {
             Console.Clear();
@@ -37,13 +38,22 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
                 continue;
             }
 
-            Console.Write("Key (bootKey) to include in request body (blank = will be logged): ");
+            Console.Write("Key (bootKey) to send in Authorization header (blank = will be logged): ");
             var key = Console.ReadLine();
             var method = ReadHttpMethod();
 
             var concurrency = ReadInt("Concurrent threads [default 1]: ", 1, min: 1);
             var perThread = ReadInt("Requests per thread [default 1]: ", 1, min: 1);
             var delaySec = ReadInt("Delay between requests in seconds [default 30]: ", 30, min: 0);
+
+            string? body = null;
+            var bodyFile = apiOptions.CurrentValue.BodyFile;
+            if (!string.IsNullOrWhiteSpace(bodyFile))
+            {
+                var path = Path.Combine(AppContext.BaseDirectory, bodyFile);
+                if (File.Exists(path))
+                    body = await File.ReadAllTextAsync(path);
+            }
 
             Console.WriteLine();
             Console.WriteLine($"Target: {url}");
@@ -53,7 +63,7 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
             Console.WriteLine("Press ENTER to start, or any other key to cancel...");
             if (Console.ReadKey(true).Key != ConsoleKey.Enter) continue;
 
-            await runner.RunAsync(url, key, method, concurrency, perThread, TimeSpan.FromSeconds(delaySec));
+            await runner.RunAsync(url, key, method, concurrency, perThread, TimeSpan.FromSeconds(delaySec), body);
             Console.WriteLine("Press any key to return to menu...");
             Console.ReadKey(true);
         }
@@ -102,11 +112,6 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
 public sealed class ApiOptions
 {
     public string? Url { get; set; }
+    public string? BodyFile { get; set; }
 }
 
-internal sealed record RequestPayload(
-    string? MeasurementId,
-    DateTime TimestampUtc,
-    object? Inputs,
-    string? BootKey
-);

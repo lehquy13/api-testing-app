@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiTestingApp", "ApiTestingApp\ApiTestingApp.csproj", "{BFCFC621-6EBD-44E1-8FF9-B19C69292E6D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebApplication1", "WebApplication1\WebApplication1.csproj", "{58749D68-0F8E-4AC7-8C23-0DB5B95FA827}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BFCFC621-6EBD-44E1-8FF9-B19C69292E6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFCFC621-6EBD-44E1-8FF9-B19C69292E6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFCFC621-6EBD-44E1-8FF9-B19C69292E6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFCFC621-6EBD-44E1-8FF9-B19C69292E6D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{58749D68-0F8E-4AC7-8C23-0DB5B95FA827}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{58749D68-0F8E-4AC7-8C23-0DB5B95FA827}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{58749D68-0F8E-4AC7-8C23-0DB5B95FA827}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{58749D68-0F8E-4AC7-8C23-0DB5B95FA827}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

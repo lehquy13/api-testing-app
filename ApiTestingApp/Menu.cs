@@ -39,6 +39,7 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
 
             Console.Write("Key (bootKey) to include in request body (blank = will be logged): ");
             var key = Console.ReadLine();
+            var method = ReadHttpMethod();
 
             var concurrency = ReadInt("Concurrent threads [default 1]: ", 1, min: 1);
             var perThread = ReadInt("Requests per thread [default 1]: ", 1, min: 1);
@@ -46,12 +47,13 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
 
             Console.WriteLine();
             Console.WriteLine($"Target: {url}");
+            Console.WriteLine($"Method: {method.Method}");
             Console.WriteLine($"bootKey: {(string.IsNullOrWhiteSpace(key) ? "(empty)" : key)}");
             Console.WriteLine($"Threads: {concurrency}, Requests/Thread: {perThread}, Delay: {delaySec}s");
             Console.WriteLine("Press ENTER to start, or any other key to cancel...");
             if (Console.ReadKey(true).Key != ConsoleKey.Enter) continue;
 
-            await runner.RunAsync(url, key, concurrency, perThread, TimeSpan.FromSeconds(delaySec));
+            await runner.RunAsync(url, key, method, concurrency, perThread, TimeSpan.FromSeconds(delaySec));
             Console.WriteLine("Press any key to return to menu...");
             Console.ReadKey(true);
         }
@@ -67,6 +69,33 @@ public sealed class ConsoleMenu(ILoadRunner runner, IOptionsMonitor<ApiOptions> 
             if (int.TryParse(s, out var v) && v >= min && v <= max) return v;
             Console.WriteLine($"Please enter an integer between {min} and {max} (or leave blank for {@default}).");
         }
+    }
+
+    private static HttpMethod ReadHttpMethod()
+    {
+        Console.WriteLine();
+        Console.WriteLine("Choose HTTP method:");
+        Console.WriteLine(" 1) GET");
+        Console.WriteLine(" 2) POST");
+        Console.WriteLine(" 3) PUT");
+        Console.WriteLine(" 4) PATCH");
+        Console.WriteLine(" 5) DELETE");
+        Console.WriteLine(" 6) HEAD");
+        Console.WriteLine(" 7) OPTIONS");
+        Console.Write("Select [default or invalid option => GET]: ");
+        var s = Console.ReadLine();
+
+        return s switch
+        {
+            "1" => HttpMethod.Get,
+            "2" => HttpMethod.Post,
+            "3" => HttpMethod.Put,
+            "4" => HttpMethod.Patch,
+            "5" => HttpMethod.Delete,
+            "6" => HttpMethod.Head,
+            "7" => HttpMethod.Options,
+            _ => HttpMethod.Get
+        };
     }
 }
 

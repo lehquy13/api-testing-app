@@ -6,12 +6,13 @@ namespace ApiTestingApp;
 
 public interface ILoadRunner
 {
-    Task RunAsync(string url, string? bootKey, int concurrency, int requestsPerThread, TimeSpan delayBetween);
+    Task RunAsync(string url, string? bootKey, HttpMethod method, int concurrency, int requestsPerThread,
+        TimeSpan delayBetween);
 }
 
 public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
 {
-    public async Task RunAsync(string url, string? bootKey, int concurrency, int requestsPerThread,
+    public async Task RunAsync(string url, string? bootKey, HttpMethod method, int concurrency, int requestsPerThread,
         TimeSpan delayBetween)
     {
         using var scope = sp.CreateScope();
@@ -59,11 +60,19 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         }
 
         var elapsed = DateTime.UtcNow - started;
+        var total = success + fail;
+        var rps = elapsed.TotalSeconds > 0 ? total / elapsed.TotalSeconds : 0;
+        var successRate = total > 0 ? (double)success / total * 100 : 0;
+
         Console.WriteLine();
         Console.WriteLine("==== Summary ====");
         Console.WriteLine($"Elapsed: {elapsed:g}");
         Console.WriteLine($"Success: {success}");
         Console.WriteLine($"Failed : {fail}");
+        Console.WriteLine($"Total  : {total}");
+        Console.WriteLine($"Success Rate : {successRate:F2}%");
+        Console.WriteLine($"Requests/sec: {rps:F2}");
+
         if (!errors.IsEmpty)
         {
             Console.WriteLine("-- First few errors --");
@@ -76,18 +85,17 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         Task<long[]> MakeWorker(int id) => Task.Run(async () =>
         {
             long ok = 0, bad = 0;
+
             for (int i = 1; i <= requestsPerThread && !token.IsCancellationRequested; i++)
             {
                 try
                 {
-                    var payload = new RequestPayload(
-                        MeasurementId: $"{id:D3}-{i:D5}",
-                        TimestampUtc: DateTime.UtcNow,
-                        Inputs: new { thread = id, index = i },
-                        BootKey: bootKey // may be null/empty
-                    );
+                    var (finalUrl, content) = BuildRequest(method, url, bootKey, id, i);
 
-                    using var resp = await http.PostAsJsonAsync(url, payload, token);
+                    using var req = new HttpRequestMessage(method, finalUrl);
+                    req.Content = content;
+
+                    using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
                     if (resp.IsSuccessStatusCode) Interlocked.Increment(ref ok);
                     else
                     {
@@ -121,6 +129,42 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
 
             return new[] { ok, bad };
         }, token);
+    }
+
+    private static (string finalUrl, HttpContent? content) BuildRequest(HttpMethod method, string url, string? bootKey,
+        int workerId, int idx)
+    {
+        // Build a common payload
+        var payload = new RequestPayload(
+            MeasurementId: $"{workerId:D3}-{idx:D5}",
+            TimestampUtc: DateTime.UtcNow,
+            Inputs: new { thread = workerId, index = idx },
+            BootKey: bootKey // may be null/empty
+        );
+
+        // Methods that typically carry a body:
+        bool methodSupportsBody =
+            method == HttpMethod.Post ||
+            method == HttpMethod.Put ||
+            method == HttpMethod.Patch ||
+            method == HttpMethod.Delete; // DELETE can carry a body though some servers ignore it
+
+        if (methodSupportsBody)
+        {
+            // Send JSON body
+            return (url, JsonContent.Create(payload));
+        }
+
+        // For GET/HEAD/OPTIONS — append bootKey as query string if provided
+        var finalUrl = AppendQuery(url, "bootKey", bootKey);
+        return (finalUrl, null);
+    }
+
+    private static string AppendQuery(string url, string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return url;
+        var sep = url.Contains('?') ? '&' : '?';
+        return $"{url}{sep}{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}";
     }
 
     private static async Task<string> SafeRead(HttpResponseMessage resp, CancellationToken ct)

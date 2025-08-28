@@ -1,5 +1,5 @@
 ﻿using System.Collections.Concurrent;
-using System.Net.Http.Json;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ApiTestingApp;
@@ -7,13 +7,13 @@ namespace ApiTestingApp;
 public interface ILoadRunner
 {
     Task RunAsync(string url, string? bootKey, HttpMethod method, int concurrency, int requestsPerThread,
-        TimeSpan delayBetween);
+        TimeSpan delayBetween, string? body);
 }
 
 public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
 {
     public async Task RunAsync(string url, string? bootKey, HttpMethod method, int concurrency, int requestsPerThread,
-        TimeSpan delayBetween)
+        TimeSpan delayBetween, string? body)
     {
         using var scope = sp.CreateScope();
         var factory = scope.ServiceProvider.GetRequiredService<IHttpClientFactory>();
@@ -25,12 +25,16 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         // Stop watcher (press 'S' to stop)
         var stopWatcher = Task.Run(() =>
         {
+            Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("Running... Press 'S' to stop and return to the menu.");
+            Console.ResetColor();
             while (!token.IsCancellationRequested)
             {
                 if (Console.KeyAvailable && char.ToUpperInvariant(Console.ReadKey(true).KeyChar) == 'S')
                 {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine("Stopping...");
+                    Console.ResetColor();
                     cts.Cancel();
                     break;
                 }
@@ -67,8 +71,11 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         Console.WriteLine();
         Console.WriteLine("==== Summary ====");
         Console.WriteLine($"Elapsed: {elapsed:g}");
+        Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"Success: {success}");
+        Console.ForegroundColor = ConsoleColor.Red;
         Console.WriteLine($"Failed : {fail}");
+        Console.ResetColor();
         Console.WriteLine($"Total  : {total}");
         Console.WriteLine($"Success Rate : {successRate:F2}%");
         Console.WriteLine($"Requests/sec: {rps:F2}");
@@ -76,7 +83,12 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         if (!errors.IsEmpty)
         {
             Console.WriteLine("-- First few errors --");
-            foreach (var e in errors.Take(10)) Console.WriteLine(e);
+            foreach (var e in errors.Take(10))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(e);
+                Console.ResetColor();
+            }
             if (errors.Count > 10) Console.WriteLine($"...and {errors.Count - 10} more");
         }
 
@@ -90,10 +102,14 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
             {
                 try
                 {
-                    var (finalUrl, content) = BuildRequest(method, url, bootKey, id, i);
+                    var (finalUrl, content) = BuildRequest(method, url, id, i, body);
 
                     using var req = new HttpRequestMessage(method, finalUrl);
                     req.Content = content;
+                    if (!string.IsNullOrWhiteSpace(bootKey))
+                    {
+                        req.Headers.TryAddWithoutValidation("Authorization", bootKey);
+                    }
 
                     using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
                     if (resp.IsSuccessStatusCode) Interlocked.Increment(ref ok);
@@ -131,40 +147,21 @@ public sealed class LoadRunner(IServiceProvider sp) : ILoadRunner
         }, token);
     }
 
-    private static (string finalUrl, HttpContent? content) BuildRequest(HttpMethod method, string url, string? bootKey,
-        int workerId, int idx)
+    private static (string finalUrl, HttpContent? content) BuildRequest(HttpMethod method, string url,
+        int workerId, int idx, string? body)
     {
-        // Build a common payload
-        var payload = new RequestPayload(
-            MeasurementId: $"{workerId:D3}-{idx:D5}",
-            TimestampUtc: DateTime.UtcNow,
-            Inputs: new { thread = workerId, index = idx },
-            BootKey: bootKey // may be null/empty
-        );
-
-        // Methods that typically carry a body:
         bool methodSupportsBody =
             method == HttpMethod.Post ||
             method == HttpMethod.Put ||
             method == HttpMethod.Patch ||
-            method == HttpMethod.Delete; // DELETE can carry a body though some servers ignore it
+            method == HttpMethod.Delete;
 
-        if (methodSupportsBody)
+        if (methodSupportsBody && !string.IsNullOrWhiteSpace(body))
         {
-            // Send JSON body
-            return (url, JsonContent.Create(payload));
+            return (url, new StringContent(body, Encoding.UTF8, "application/json"));
         }
 
-        // For GET/HEAD/OPTIONS — append bootKey as query string if provided
-        var finalUrl = AppendQuery(url, "bootKey", bootKey);
-        return (finalUrl, null);
-    }
-
-    private static string AppendQuery(string url, string name, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return url;
-        var sep = url.Contains('?') ? '&' : '?';
-        return $"{url}{sep}{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}";
+        return (url, null);
     }
 
     private static async Task<string> SafeRead(HttpResponseMessage resp, CancellationToken ct)

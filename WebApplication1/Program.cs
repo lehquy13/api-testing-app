@@ -1,4 +1,7 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
+using System.Threading;
+using System.IO;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -19,6 +22,36 @@ var sampleTodos = new Todo[]
 };
 
 var todosApi = app.MapGroup("/todos");
+
+long todoCallCount = 0;
+todosApi.AddEndpointFilter(async (context, next) =>
+{
+    var count = Interlocked.Increment(ref todoCallCount);
+    var request = context.HttpContext.Request;
+    string body = string.Empty;
+    if (request.ContentLength > 0)
+    {
+        request.EnableBuffering();
+        using var reader = new StreamReader(request.Body, leaveOpen: true);
+        body = await reader.ReadToEndAsync();
+        request.Body.Position = 0;
+    }
+
+    var dir = Path.Combine(AppContext.BaseDirectory, "RequestBodies");
+    Directory.CreateDirectory(dir);
+    var filePath = Path.Combine(dir, $"request-{count}.txt");
+    await File.WriteAllTextAsync(filePath, body);
+
+    app.Logger.LogInformation(
+        "Call #{Count} {Method} {Path} Body: {Body}",
+        count,
+        request.Method,
+        request.Path,
+        body);
+
+    return await next(context);
+});
+
 todosApi.MapGet("/", () => sampleTodos);
 todosApi.MapGet("/{id}", (int id) =>
     sampleTodos.FirstOrDefault(a => a.Id == id) is { } todo
